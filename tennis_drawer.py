@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 import supervision as sv
 from typing import Tuple, Optional, List, Union
+from google.colab.patches import cv2_imshow
 
 # --- Configuration ---
 class TennisCourtConfiguration:
@@ -24,92 +25,86 @@ def _to_pixel(
     Converts a real-world (x, y) point in meters to pixel coordinates (u, v).
     """
     return (
-        int(round(point[0] * scale + padding)),
         int(round(point[1] * scale + padding)),
+        int(round(point[0] * scale + padding)),
     )
 
 # --- Core Drawing Function ---
 def draw_court(
     config: TennisCourtConfiguration = TennisCourtConfiguration(),
-    scale: float = 50, # Pixels per meter
+    scale: float = 50,
     padding: int = 50,
     line_thickness: int = 4,
     line_color: sv.Color = sv.Color.WHITE,
-    court_color: sv.Color = sv.Color.from_hex("#5072A7"), # Classic blue court
-    outside_color: sv.Color = sv.Color.from_hex("#3C9E6A"), # Green outside
+    court_color: sv.Color = sv.Color.from_hex("#5072A7"),
+    outside_color: sv.Color = sv.Color.from_hex("#3C9E6A"),
 ) -> np.ndarray:
-    """Render a tennis court to an image."""
     
-    # Calculate image size
-    court_width_px = int(round(config.court_width * scale))
-    court_length_px = int(round(config.court_length * scale))
+    # --- UPDATED: Image Dimensions Swapped ---
+    # Width of image corresponds to Court Width
+    # Height of image corresponds to Court Length
+    image_cols = int(round(config.court_width * scale))
+    image_rows = int(round(config.court_length * scale))
     
-    # Initialize Canvas
     image = np.zeros(
-        (court_width_px + 2 * padding, court_length_px + 2 * padding, 3),
+        (image_rows + 2 * padding, image_cols + 2 * padding, 3),
         dtype=np.uint8,
     )
-    # Fill background (outside area)
     image[:, :] = outside_color.as_bgr()
 
-    # Define standard court rectangle in pixels for the "Inside" color
-    top_left = _to_pixel((0, 0), scale, padding)
-    bottom_right = _to_pixel((config.court_length, config.court_width), scale, padding)
+    # Define standard court rectangle (Top-Left to Bottom-Right)
+    # Note: _to_pixel handles the swapping, so we just pass (Length, Width) as usual
+    p_top_left = _to_pixel((0, 0), scale, padding)
+    p_bottom_right = _to_pixel((config.court_length, config.court_width), scale, padding)
     
-    # Draw the blue court floor
-    cv2.rectangle(image, top_left, bottom_right, court_color.as_bgr(), -1)
+    cv2.rectangle(image, p_top_left, p_bottom_right, court_color.as_bgr(), -1)
 
-    # --- Draw Lines ---
+    # --- Draw Lines (Logic remains (x,y) = (length, width)) ---
     
-    # 1. Outer Boundary (Doubles Sidelines & Baselines)
-    cv2.rectangle(image, top_left, bottom_right, line_color.as_bgr(), line_thickness)
+    # 1. Outer Boundary
+    cv2.rectangle(image, p_top_left, p_bottom_right, line_color.as_bgr(), line_thickness)
 
     # 2. Singles Sidelines
-    # Top singles line
     p1 = _to_pixel((0, config.alley_width), scale, padding)
     p2 = _to_pixel((config.court_length, config.alley_width), scale, padding)
     cv2.line(image, p1, p2, line_color.as_bgr(), line_thickness)
     
-    # Bottom singles line
     p3 = _to_pixel((0, config.court_width - config.alley_width), scale, padding)
     p4 = _to_pixel((config.court_length, config.court_width - config.alley_width), scale, padding)
     cv2.line(image, p3, p4, line_color.as_bgr(), line_thickness)
 
-    # 3. Service Lines (Vertical lines)
+    # 3. Service Lines
     service_line_x_left = config.net_position - config.service_line_dist
     service_line_x_right = config.net_position + config.service_line_dist
     
-    # Left Service Line (spans singles width only)
     sl_l_top = _to_pixel((service_line_x_left, config.alley_width), scale, padding)
     sl_l_bot = _to_pixel((service_line_x_left, config.court_width - config.alley_width), scale, padding)
     cv2.line(image, sl_l_top, sl_l_bot, line_color.as_bgr(), line_thickness)
 
-    # Right Service Line
     sl_r_top = _to_pixel((service_line_x_right, config.alley_width), scale, padding)
     sl_r_bot = _to_pixel((service_line_x_right, config.court_width - config.alley_width), scale, padding)
     cv2.line(image, sl_r_top, sl_r_bot, line_color.as_bgr(), line_thickness)
 
-    # 4. Center Service Line (Horizontal line in the middle of the service boxes)
+    # 4. Center Service Line
     center_y = config.court_width / 2
     c_start = _to_pixel((service_line_x_left, center_y), scale, padding)
     c_end = _to_pixel((service_line_x_right, center_y), scale, padding)
     cv2.line(image, c_start, c_end, line_color.as_bgr(), line_thickness)
 
-    # 5. Center Marks (Small dashes on baselines)
-    mark_len = 0.15 # 15cm mark
-    # Left Baseline Mark
+    # 5. Center Marks
+    mark_len = 0.15
     m_l_start = _to_pixel((0, center_y), scale, padding)
     m_l_end = _to_pixel((mark_len, center_y), scale, padding)
     cv2.line(image, m_l_start, m_l_end, line_color.as_bgr(), line_thickness)
-    # Right Baseline Mark
+
     m_r_start = _to_pixel((config.court_length, center_y), scale, padding)
     m_r_end = _to_pixel((config.court_length - mark_len, center_y), scale, padding)
     cv2.line(image, m_r_start, m_r_end, line_color.as_bgr(), line_thickness)
 
-    # 6. The Net (Visualized as a line across the whole court)
-    net_top = _to_pixel((config.net_position, -0.9), scale, padding) # Extend slightly outside
+    # 6. The Net
+    net_top = _to_pixel((config.net_position, -0.9), scale, padding)
     net_bot = _to_pixel((config.net_position, config.court_width + 0.9), scale, padding)
-    cv2.line(image, net_top, net_bot, (200, 200, 200), line_thickness + 2) # Greyish net
+    cv2.line(image, net_top, net_bot, (200, 200, 200), line_thickness + 2)
 
     return image
 
