@@ -114,76 +114,97 @@ def _savgol_safe(y: np.ndarray, window: int, poly: int) -> np.ndarray:
     return savgol_filter(y, window_length=window, polyorder=poly, mode="interp")
 
 
-def clean_tennis_paths(
+def clean_paths(
     video_xy: np.ndarray,
-    court_dims: tuple = (10.97, 23.77), # Standard tennis court width/length in meters
-    jump_sigma: float = 6.0,            # Higher sigma for explosive tennis starts
-    min_jump_dist: float = 0.8,         # Tennis players cover ground faster in bursts
-    max_jump_run: int = 5,              # Glitches usually shorter in open-court tennis
+    jump_sigma: float = 5.0,
+    min_jump_dist: float = 0.7,
+    max_jump_run: int = 6,
     pad_around_runs: int = 1,
-    smooth_window: int = 5,             # Smaller window to preserve sharp cuts/slides
+    smooth_window: int = 9,
     smooth_poly: int = 2,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Adapted trajectory cleaning for Tennis.
-    
-    Changes from Basketball version:
-    1. Tighter smoothing (window=5) to preserve sharp cuts.
-    2. Higher jump tolerance (sigma=6.0) for explosive sprints.
-    3. 'Hard' boundary clipping: removes points impossibly far from court.
+    Clean 2D player trajectories by removing teleport-like outliers,
+    interpolating missing frames, and smoothing paths.
+
+    The function processes each player's path independently.
+    It detects unrealistically large frame-to-frame jumps, replaces
+    those sections with linear interpolation, and smooths the
+    resulting signal using a Savitzky–Golay filter.
+
+    Args:
+        video_xy (np.ndarray):
+            Array of shape `(T, P, 2)` containing player coordinates.
+            `T` is the frame count, `P` is the number of tracked players,
+            and each coordinate is in court space (x, y).
+
+        jump_sigma (float, default=5.0):
+            Controls sensitivity to abnormal jumps relative to the player's
+            typical movement speed. Lower values make the function more
+            aggressive in detecting jumps.
+            Example:
+            - `jump_sigma=3.0` catches smaller irregularities.
+            - `jump_sigma=7.0` only removes the most extreme ones.
+
+        min_jump_dist (float, default=0.7):
+            Absolute movement threshold. A jump must exceed this distance
+            (in the same unit as your court coordinates) to be treated
+            as a teleport, regardless of relative speed.
+            - Increase it if normal movements are fast (e.g., full-court sprint).
+            - Decrease it if the model often outputs small erratic shifts.
+
+        max_jump_run (int, default=6):
+            Maximum number of consecutive frames treated as a short
+            "teleport run" to remove. Longer runs are preserved, assuming
+            they reflect real movement or tracking loss.
+            - Increase to also clean longer glitches.
+            - Decrease to only handle quick spikes.
+
+        pad_around_runs (int, default=1):
+            Number of frames to also drop before and after each detected
+            teleport run. This prevents edge artifacts.
+            - Increase if residual jumps appear near corrected regions.
+            - Decrease to minimize data removal.
+
+        smooth_window (int, default=9):
+            Window length for Savitzky–Golay smoothing. Must be odd.
+            Larger values yield smoother, slower-changing paths but can
+            blur fast direction changes.
+            - Try 5–7 for short, fast clips.
+            - Use 9–15 for longer, noisy trajectories.
+
+        smooth_poly (int, default=2):
+            Polynomial order for smoothing.
+            - `1` for simpler moving-average–like smoothing.
+            - `2–3` keeps local curvature (more natural motion arcs).
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]:
+            - `cleaned_xy`: Same shape as input `(T, P, 2)`, cleaned and smoothed.
+            - `edited_mask`: Boolean mask `(T, P)` marking frames that were
+              interpolated or modified.
     """
     T, P, _ = video_xy.shape
     cleaned = video_xy.astype(float).copy()
     edited = np.zeros((T, P), dtype=bool)
 
-    # Tennis Court Constraints (in meters, assuming center is 0,0)
-    # Adding buffer: Players rarely go >4m wide or >5m behind baseline
-    half_w, half_l = court_dims[0]/2, court_dims[1]/2
-    x_limit = half_w + 4.0 
-    y_limit = half_l + 5.0
-
     for p in range(P):
         traj = cleaned[:, p, :]  # (T, 2)
-        
-        # --- NEW: Hard Boundary Check ---
-        # If tracking drifts into the stands, kill it immediately.
-        # Assumes (0,0) is center court. Adjust if your origin is top-left.
-        out_of_bounds = (np.abs(traj[:, 0]) > x_limit) | (np.abs(traj[:, 1]) > y_limit)
-        
-        # Calculate speed
         diffs = np.diff(traj, axis=0)
         speed = np.linalg.norm(diffs, axis=1)
 
-        # Handle empty/static tracks
-        valid_speed = speed[np.isfinite(speed)]
-        if valid_speed.size == 0:
+        if np.all(~np.isfinite(speed)) or speed.size == 0:
             continue
 
-        # --- Statistics ---
-        med = np.median(valid_speed)
-        scale = _mad(valid_speed)
+        med = np.median(speed[np.isfinite(speed)])
+        scale = _mad(speed[np.isfinite(speed)])
         scale = max(scale, 1e-6)
 
-        # Detect Outliers
         jump_by_sigma = speed > (med + jump_sigma * scale)
         jump_by_abs = speed > min_jump_dist
-        
-        # Combine filters: Statistical Jump OR Out of Bounds
         jump_mask = jump_by_sigma & jump_by_abs
-        
-        # Pad bounds mask to match speed shape (T-1) -> T
-        # (We treat a point as bad if it is out of bounds)
-        oob_mask = out_of_bounds.copy()
-        
-        remove = np.zeros(T, dtype=bool)
-        
-        # 1. Process Out of Bounds "runs"
-        if oob_mask.any():
-             edited[:, p] |= oob_mask
-             traj[oob_mask] = np.nan
-             remove |= oob_mask
 
-        # 2. Process Speed Jumps "runs"
+        remove = np.zeros(T, dtype=bool)
         for s, e in _runs(jump_mask):
             length = e - s + 1
             if length <= max_jump_run:
@@ -191,20 +212,16 @@ def clean_tennis_paths(
                 re = min(T - 1, e + 1 + pad_around_runs)
                 remove[rs : re + 1] = True
 
-        # --- Apply Changes ---
-        if not remove.any() and not oob_mask.any():
-            # If clean, just smooth
+        if not remove.any():
             for d in range(2):
                 traj[:, d] = _savgol_safe(traj[:, d], smooth_window, smooth_poly)
             cleaned[:, p, :] = traj
             continue
 
-        # Mark edited frames
         edited[:, p] |= remove
         traj_nan = traj.copy()
         traj_nan[remove, :] = np.nan
 
-        # Interpolate & Smooth
         for d in range(2):
             traj_nan[:, d] = _linear_interp_1d(traj_nan[:, d])
             traj_nan[:, d] = _savgol_safe(traj_nan[:, d], smooth_window, smooth_poly)
