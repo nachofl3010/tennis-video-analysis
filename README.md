@@ -23,7 +23,7 @@ each player run during this point?"* become straightforward geometry.
    changes in the vertical velocity of the smoothed ball trajectory.
 5. **Render** — a top-down court video with player positions and a live distance counter.
 
-On the sample point, player 1 covered **19.02 m** and player 2 **21.47 m**.
+On the sample point, player 1 covered **16.74 m** and player 2 **24.78 m**.
 
 ## Stack
 
