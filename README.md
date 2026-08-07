@@ -55,6 +55,19 @@ video is not practical on CPU.
 To skip tracking entirely and go straight to the analysis, run the import cells and load the
 cached `rectangles_*.npy` arrays.
 
+### Analysis only, locally (no GPU)
+
+Everything downstream of tracking — homography, trajectory cleaning, distance and bounce
+analysis, rendering — runs on CPU from the cached arrays:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+`requirements.txt` deliberately excludes SAM 2 and torch, which are only needed to
+re-run tracking in Colab.
+
 ## Limitations
 
 - Court corners and the initial object boxes are annotated by hand, once per clip.

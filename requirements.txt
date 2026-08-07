@@ -1,0 +1,17 @@
+# Dependencias para el análisis en CPU: homografía, limpieza de trayectorias,
+# distancia, rebotes y render del video cenital a partir de los rectangles_*.npy.
+#
+# NO incluye SAM 2 ni torch: el tracking ya se corrió en Colab con GPU y su
+# resultado está cacheado en rectangles_p1/p2/ball.npy. Para re-correr el
+# tracking, usar el notebook en Colab (ver README).
+#
+# Versiones verificadas en Python 3.12.
+
+numpy>=2.0
+scipy>=1.11
+opencv-python>=4.9
+pandas>=2.0
+supervision>=0.30
+matplotlib>=3.8
+plotly>=6.0
+tqdm>=4.66

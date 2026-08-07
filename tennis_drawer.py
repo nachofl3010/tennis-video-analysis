@@ -1,8 +1,7 @@
 import cv2
 import numpy as np
 import supervision as sv
-from typing import Tuple, Optional, List, Union
-from google.colab.patches import cv2_imshow
+from typing import Tuple, Optional, List
 
 # --- Configuration ---
 class TennisCourtConfiguration:
