@@ -13,6 +13,10 @@ detect bounces. The notebook remains the place to look at the intermediate
 plots; this script is for checking the numbers come out right.
 """
 
+import argparse
+import json
+from pathlib import Path
+
 import numpy as np
 import cv2
 
@@ -42,15 +46,49 @@ CLEAN_KWARGS = dict(
 )
 
 
-def court_homography() -> np.ndarray:
+def court_homography(image_corners: np.ndarray = IMAGE_CORNERS) -> np.ndarray:
     """
     Homography mapping image pixels onto court coordinates in metres.
+
+    Args:
+        image_corners (np.ndarray):
+            The four court corners in pixels, clockwise from the far-left
+            corner. Defaults to the sample clip's.
 
     Returns:
         np.ndarray: The 3x3 homography matrix.
     """
-    matrix, _ = cv2.findHomography(IMAGE_CORNERS, COURT_CORNERS)
+    matrix, _ = cv2.findHomography(np.float32(image_corners), COURT_CORNERS)
     return matrix
+
+
+def load_clip(clip_dir: Path | None) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, dict]:
+    """
+    Load cached tracking arrays, and the court corners that go with them.
+
+    A clip produced by `track_new_clip.ipynb` carries a `clip_meta.json` holding
+    its own corners and frame offset, since both are specific to the camera
+    angle and the tracked range. Without one, the sample clip's values are used.
+
+    Args:
+        clip_dir (Path | None):
+            Directory holding `rectangles_*.npy` and optionally
+            `clip_meta.json`. `None` means the current directory.
+
+    Returns:
+        tuple: `(p1_boxes, p2_boxes, ball_boxes, image_corners, metadata)`.
+    """
+    base = clip_dir or Path(".")
+    boxes = tuple(np.load(base / f"rectangles_{n}.npy") for n in ("p1", "p2", "ball"))
+
+    meta_path = base / "clip_meta.json"
+    if meta_path.exists():
+        meta = json.loads(meta_path.read_text())
+        corners = np.float32(meta["court_corners_px"])
+    else:
+        meta = {"clip": "sample point", "frame_offset": 147, "fps": 60}
+        corners = IMAGE_CORNERS
+    return (*boxes, corners, meta)
 
 
 def to_court(points: np.ndarray, homography: np.ndarray) -> np.ndarray:
@@ -105,11 +143,22 @@ def distance_run(path: np.ndarray) -> float:
 
 
 def main() -> None:
-    homography = court_homography()
-    p1 = np.load("rectangles_p1.npy")
-    p2 = np.load("rectangles_p2.npy")
-    ball = np.load("rectangles_ball.npy")
-    print(f"loaded {len(p1)} frames of cached tracking\n")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--clip",
+        type=Path,
+        default=None,
+        metavar="DIR",
+        help="directory of a clip tracked with track_new_clip.ipynb "
+        "(reads its court corners and frame offset from clip_meta.json); "
+        "defaults to the sample clip in this directory",
+    )
+    args = parser.parse_args()
+
+    p1, p2, ball, corners, meta = load_clip(args.clip)
+    homography = court_homography(corners)
+    print(f"clip: {meta['clip']}  ({len(p1)} frames tracked, {meta['fps']:g} fps)")
+    print(f"array index i is video frame i + {meta['frame_offset']}\n")
 
     raw = np.stack(
         [player_court_positions(b, homography) for b in (p1, p2)], axis=1

@@ -58,6 +58,7 @@ Python · SAM 2 · OpenCV · NumPy · pandas · SciPy · supervision · Matplotl
 | File | Purpose |
 |---|---|
 | `player_ball_tracking.ipynb` | Main notebook — tracking, homography, analysis, rendering |
+| `track_new_clip.ipynb` | Colab/GPU notebook that produces cached arrays for a **new** clip |
 | `run_analysis.py` | Runs the whole analysis on CPU from the cached arrays |
 | `tennis_drawer.py` | Draws a regulation top-down court; plots points and paths on it |
 | `path.py` | Trajectory cleaning — MAD outlier detection, jump removal, Savitzky–Golay smoothing |
@@ -111,6 +112,22 @@ jitter (mean |acceleration|, m/frame^2)
 re-run tracking in Colab. In the notebook, **skip the setup cells** — they install SAM 2
 and download ~1.5 GB of checkpoints, and they fail without a GPU. Start instead from the
 cell that loads `rectangles_*.npy`.
+
+## Tracking a new clip
+
+`track_new_clip.ipynb` runs on Colab with a GPU and produces the cached arrays for a new
+video, plus a `clip_meta.json` holding that clip's court corners and frame offset. Then:
+
+```bash
+python run_analysis.py --clip tracking_<name>
+```
+
+**On the frame offset.** Array index `i` is not video frame `i`. Frames are extracted from
+`START_IDX`, and SAM 2 propagates forward from the annotated frame, so index `i` is video
+frame `i + start_idx + annotation_frame`. For the sample clip that offset is **147** — the
+arrays cover video frames 147–699. Anything that draws tracking output over the source
+video has to account for it, or everything lands on empty court. `track_new_clip.ipynb`
+records the offset when the arrays are made and checks it visually before you download.
 
 ## Limitations
 
