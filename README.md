@@ -58,6 +58,7 @@ Python · SAM 2 · OpenCV · NumPy · pandas · SciPy · supervision · Matplotl
 | File | Purpose |
 |---|---|
 | `player_ball_tracking.ipynb` | Main notebook — tracking, homography, analysis, rendering |
+| `run_analysis.py` | Runs the whole analysis on CPU from the cached arrays |
 | `tennis_drawer.py` | Draws a regulation top-down court; plots points and paths on it |
 | `path.py` | Trajectory cleaning — MAD outlier detection, jump removal, Savitzky–Golay smoothing |
 | `bounce.py` | Bounce and racket-contact detection from trajectory curvature |
@@ -89,10 +90,27 @@ analysis, rendering — runs on CPU from the cached arrays:
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+python run_analysis.py
+```
+
+`run_analysis.py` is the quickest way to confirm everything works. It reads the cached
+arrays and prints distance covered, the jitter reduction from cleaning, and every
+detected bounce in court coordinates — no GPU, no SAM 2, no source video:
+
+```
+distance covered
+  player 1: 16.74 m cleaned   (18.90 m raw, 0 frames flagged as outliers)
+  player 2: 24.78 m cleaned   (28.43 m raw, 0 frames flagged as outliers)
+
+jitter (mean |acceleration|, m/frame^2)
+  player 1: 0.0398 -> 0.0068   (83% reduction)
+  ...
 ```
 
 `requirements.txt` deliberately excludes SAM 2 and torch, which are only needed to
-re-run tracking in Colab.
+re-run tracking in Colab. In the notebook, **skip the setup cells** — they install SAM 2
+and download ~1.5 GB of checkpoints, and they fail without a GPU. Start instead from the
+cell that loads `rectangles_*.npy`.
 
 ## Limitations
 
