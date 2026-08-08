@@ -1,6 +1,11 @@
 # Source video (not distributed; supply your own clip)
 *.mp4
 
+# SAM 2 setup artifacts — the notebook's install cells clone the repo and download
+# ~1.5 GB of checkpoints into these paths. Only needed to re-run tracking on Colab.
+checkpoints/
+segment-anything-2/
+
 # Python
 __pycache__/
 *.py[cod]
