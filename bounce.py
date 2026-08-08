@@ -79,6 +79,31 @@ def _fill_and_smooth(values: np.ndarray, window: int, poly: int) -> np.ndarray:
     return savgol_filter(filled, window, poly)
 
 
+def smoothed_trajectory(
+    ball_boxes: np.ndarray, smooth_window: int = 9, smooth_poly: int = 3
+) -> np.ndarray:
+    """
+    Interpolated, smoothed ball trajectory in image space.
+
+    Useful on its own for mapping detected bounces to court coordinates: the
+    smoothed position is a better estimate of where the ball actually was than
+    the raw box centre, which the tracker repeats on roughly a third of frames.
+
+    Args:
+        ball_boxes (np.ndarray): Array of shape `(T, 4)`.
+        smooth_window (int, default=9): Savitzky-Golay window. Must be odd.
+        smooth_poly (int, default=3): Polynomial order.
+
+    Returns:
+        np.ndarray: Array of shape `(T, 2)` of smoothed `(x, y)` centres.
+    """
+    centres = ball_centres(ball_boxes)
+    return np.stack(
+        [_fill_and_smooth(centres[:, d], smooth_window, smooth_poly) for d in (0, 1)],
+        axis=1,
+    )
+
+
 def _unreliable_frames(ball_boxes: np.ndarray, guard: int) -> np.ndarray:
     """
     Flag frames whose curvature cannot be trusted.
@@ -207,7 +232,7 @@ def detect_bounces(
             - `stroke_frames`: Sorted frame indices of racket contacts.
     """
     centres = ball_centres(ball_boxes)
-    smooth_y = _fill_and_smooth(centres[:, 1], smooth_window, smooth_poly)
+    smooth_y = smoothed_trajectory(ball_boxes, smooth_window, smooth_poly)[:, 1]
 
     filled_y = (
         pd.Series(centres[:, 1])

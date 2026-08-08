@@ -19,11 +19,35 @@ each player run during this point?"* become straightforward geometry.
 3. **Clean trajectories** — raw tracking output jitters and occasionally jumps. Outliers are
    flagged with a MAD-based robust z-score, short bad runs are interpolated away, and the
    result is smoothed with a Savitzky–Golay filter.
-4. **Analyse** — cumulative distance run per player, and ball bounces detected from sign
-   changes in the vertical velocity of the smoothed ball trajectory.
+4. **Analyse** — cumulative distance run per player, and ball bounces detected from the
+   curvature of the ball's image trajectory (see below).
 5. **Render** — a top-down court video with player positions and a live distance counter.
 
 On the sample point, player 1 covered **16.74 m** and player 2 **24.78 m**.
+
+## Detecting bounces
+
+The obvious approach — look for peaks in the ball's image `y` — does not work, and it is
+worth saying why, because the failure is geometric rather than a matter of tuning.
+
+A broadcast camera sits behind and above one baseline, so image `y` mixes two things:
+how far away the ball is, and how high it is off the court. Over a single shot the
+distance term dominates. On one segment of the sample clip the ball's `y` runs from 350
+to 843 px **monotonically**, straight through a bounce, with no local maximum anywhere.
+What peaks of `y` actually mark is *racket contacts* — and only the near player's, since
+the far player's contacts are minima.
+
+A bounce instead shows up as curvature. The ball's vertical velocity flips while its
+motion in depth carries on, so `d²y/dt²` spikes negative whichever way the ball is
+travelling. Racket contacts spike harder, so `bounce.py` locates contacts first and takes
+one bounce from each interval between them — the two alternate through a rally.
+
+Against hand-labelled bounces for the sample point: **7/7 detected, no false positives,
+mean error 1.4 frames (24 ms) at 60 fps, worst case 3 frames.** Reproduce with:
+
+```bash
+python validate_bounce.py
+```
 
 ## Stack
 
@@ -36,6 +60,8 @@ Python · SAM 2 · OpenCV · NumPy · pandas · SciPy · supervision · Matplotl
 | `player_ball_tracking.ipynb` | Main notebook — tracking, homography, analysis, rendering |
 | `tennis_drawer.py` | Draws a regulation top-down court; plots points and paths on it |
 | `path.py` | Trajectory cleaning — MAD outlier detection, jump removal, Savitzky–Golay smoothing |
+| `bounce.py` | Bounce and racket-contact detection from trajectory curvature |
+| `validate_bounce.py` | Checks `bounce.py` against hand-labelled bounces for the sample point |
 | `rectangles_*.npy` | Cached per-frame bounding boxes (players and ball) for the sample clip |
 
 ## Running it
@@ -72,8 +98,14 @@ re-run tracking in Colab.
 
 - Court corners and the initial object boxes are annotated by hand, once per clip.
 - Tuned and validated on a single point from one camera angle.
-- Bounce detection relies on vertical-velocity reversals, so it can be fooled by occlusion
-  or by the ball passing in front of a player.
+- Bounce detection assumes bounces and racket contacts strictly alternate. That is what
+  makes it robust — it cannot emit two bounces 30 ms apart — but a ball volleyed out of
+  the air, or one that bounces twice before being returned, will not be represented
+  correctly. It also fixes the bounce *count* at one per interval, so the count follows
+  from the detected contacts; it is the bounce *positions* that the 24 ms figure measures.
+- The homography describes the court plane, so it maps the ball correctly only on frames
+  where the ball is touching the ground. Bounce positions are mapped; a full ball
+  trajectory in court coordinates would not be meaningful.
 
 ## Credits
 
