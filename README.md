@@ -3,6 +3,18 @@
 Turn a broadcast-style tennis clip into court-level analytics: a top-down view of both
 players and the ball, distance covered per player, and automatic bounce detection.
 
+<p align="center">
+  <img src="assets/point_top_down.gif" width="660" alt="One tennis point replayed in top-down court coordinates, with a live distance counter for each player and bounces appearing where the ball lands">
+</p>
+
+<p align="center">
+  <em>One real ATP point, replayed in court coordinates. Trails follow each player, the
+  counter tracks metres covered, and yellow dots mark where the ball bounced.</em>
+</p>
+
+Nothing above is drawn from the broadcast: every pixel is rendered from coordinates the
+pipeline computed. Reproduce all the figures with `python make_assets.py`.
+
 The pipeline segments and tracks the two players and the ball with **SAM 2**, then maps
 every detection from image space into real-world court coordinates (metres) via a
 homography. Once positions live in metres instead of pixels, questions like *"how far did
@@ -24,6 +36,31 @@ each player run during this point?"* become straightforward geometry.
 5. **Render** — a top-down court video with player positions and a live distance counter.
 
 On the sample point, player 1 covered **16.74 m** and player 2 **24.78 m**.
+
+<p align="center">
+  <img src="assets/trajectories.png" width="760" alt="Top-down court showing both players' cleaned trajectories and the seven detected bounces">
+</p>
+
+Both players stayed behind their baselines for the whole point, which is why the paths sit
+outside the court. The bounces alternate ends, as a baseline rally should.
+
+## Cleaning the trajectories
+
+SAM 2 emits an identical bounding box on roughly **40% of frames**, so the raw path climbs
+in steps rather than moving smoothly. Differentiating that staircase — which distance and
+bounce detection both depend on — amplifies the noise badly.
+
+`path.py` flags outliers with a MAD-based robust z-score, interpolates short bad runs, and
+smooths with a Savitzky–Golay filter, cutting jitter (mean absolute acceleration) by
+**83% for both players**:
+
+<p align="center">
+  <img src="assets/cleaning.png" width="880" alt="Two panels comparing raw and cleaned trajectories over time, showing the raw signal advancing in visible steps while the cleaned signal is smooth">
+</p>
+
+Worth noting honestly: on this clip the MAD outlier detector flagged **zero** frames — the
+trajectories contain no teleports, so the entire improvement comes from the smoothing. The
+outlier stage earns its place on messier tracking, not here.
 
 ## Detecting bounces
 
@@ -60,6 +97,7 @@ Python · SAM 2 · OpenCV · NumPy · pandas · SciPy · supervision · Matplotl
 | `player_ball_tracking.ipynb` | Main notebook — tracking, homography, analysis, rendering |
 | `track_new_clip.ipynb` | Colab/GPU notebook that produces cached arrays for a **new** clip |
 | `run_analysis.py` | Runs the whole analysis on CPU from the cached arrays |
+| `make_assets.py` | Renders the figures in this README from those arrays |
 | `tennis_drawer.py` | Draws a regulation top-down court; plots points and paths on it |
 | `path.py` | Trajectory cleaning — MAD outlier detection, jump removal, Savitzky–Golay smoothing |
 | `bounce.py` | Bounce and racket-contact detection from trajectory curvature |
